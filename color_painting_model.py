@@ -9,6 +9,8 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 
 class ColorPaintingModel:
+    WIDTH = 200
+    HEIGHT = 200
 
     def __init__(self):
         pass
@@ -29,7 +31,7 @@ class ColorPaintingModel:
     def __input_fn(self, epoch: int = 1):
         queue = tf.train.string_input_producer(
             [os.path.join(Paths.IMAGES, 'image1.jpg')],
-            num_epochs=epoch
+            num_epochs=epoch if epoch > 0 else None
         )
 
         reader = tf.WholeFileReader()
@@ -39,25 +41,55 @@ class ColorPaintingModel:
 
         target = tf.image.decode_jpeg(image_file, channels=3)
         target = tf.image.convert_image_dtype(target, tf.float32)
+        target = tf.image.rgb_to_hsv(target)
 
-        features = tf.stack([image])
-        target = tf.stack([target])
+        images = tf.stack([image])
+        targets = tf.stack([target])
 
-        return features, target
+        features = tf.image.resize_image_with_crop_or_pad(images, self.WIDTH, self.HEIGHT)
+        targets = tf.image.resize_image_with_crop_or_pad(targets, self.WIDTH, self.HEIGHT)
+
+        return features, targets
 
     def __model_fn(self, features, labels, mode, params):
         learning_rate = params['learning_rate']
 
         inputs = features
 
-        conv = tf.layers.conv2d(
-            inputs=inputs,
-            filters=3,
-            kernel_size=[32, 32],
-            padding='same'
-        )
+        def conv2d(inputs, filters, kernel_size, strides):
+            return tf.layers.conv2d(
+                inputs=inputs,
+                filters=filters,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding='same',
+                activation=tf.nn.relu,
+                kernel_initializer=tf.contrib.layers.xavier_initializer()
+            )
 
-        predictions = conv
+        outputs = conv2d(inputs, 64, [3, 3], [2, 2])
+        outputs = conv2d(outputs, 128, [3, 3], [1, 1])
+
+        outputs = conv2d(outputs, 128, [3, 3], [2, 2])
+        outputs = conv2d(outputs, 256, [3, 3], [1, 1])
+
+        outputs = conv2d(outputs, 256, [3, 3], [2, 2])
+        outputs = conv2d(outputs, 512, [3, 3], [1, 1])
+
+        outputs = conv2d(outputs, 512, [3, 3], [1, 1])
+        outputs = conv2d(outputs, 256, [3, 3], [1, 1])
+        outputs = conv2d(outputs, 128, [3, 3], [1, 1])
+
+        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 4) * int(self.HEIGHT / 4) * 32])
+        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 2), int(self.HEIGHT / 2), 8])
+        outputs = conv2d(outputs, 64, [3, 3], [1, 1])
+
+        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 2) * int(self.HEIGHT / 2) * 64])
+        outputs = tf.reshape(outputs, [-1, self.WIDTH, self.HEIGHT, 16])
+        outputs = conv2d(outputs, 32, [3, 3], [1, 1])
+        outputs = conv2d(outputs, 2, [3, 3], [1, 1])
+
+        predictions = tf.concat([outputs, inputs], 3)
 
         loss = None
         if mode != tf.estimator.ModeKeys.PREDICT:
@@ -74,14 +106,24 @@ class ColorPaintingModel:
 
         train_op = None
         if mode == tf.estimator.ModeKeys.TRAIN:
+            learning_rate = tf.train.exponential_decay(
+                learning_rate=learning_rate,
+                global_step=tf.train.get_global_step(),
+                decay_steps=100,
+                decay_rate=0.96
+            )
+
             train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(
                 loss=loss,
                 global_step=tf.train.get_global_step(),
             )
 
+        predictions = tf.image.hsv_to_rgb(predictions)
+        predictions = tf.image.convert_image_dtype(predictions, tf.uint8)
+
         return tf.estimator.EstimatorSpec(
             mode=mode,
-            predictions=tf.image.convert_image_dtype(predictions, tf.uint8),
+            predictions=predictions,
             loss=loss,
             train_op=train_op,
             eval_metric_ops=eval_metric_ops
@@ -108,7 +150,7 @@ class ColorPaintingModel:
 
         estimator = self.__create_estimator()
         estimator.train(
-            input_fn=lambda: self.__input_fn(epoch=1),
+            input_fn=lambda: self.__input_fn(epoch=-1),
             hooks=[ValidationHook(estimator, self.__input_fn)]
         )
 
