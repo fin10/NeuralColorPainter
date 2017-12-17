@@ -73,19 +73,11 @@ class ColorPaintingModel:
         outputs = conv2d(outputs, 128, [3, 3], [2, 2])
         outputs = conv2d(outputs, 256, [3, 3], [1, 1])
 
-        outputs = conv2d(outputs, 256, [3, 3], [2, 2])
-        outputs = conv2d(outputs, 512, [3, 3], [1, 1])
-
-        outputs = conv2d(outputs, 512, [3, 3], [1, 1])
         outputs = conv2d(outputs, 256, [3, 3], [1, 1])
         outputs = conv2d(outputs, 128, [3, 3], [1, 1])
 
-        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 4) * int(self.HEIGHT / 4) * 32])
-        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 2), int(self.HEIGHT / 2), 8])
-        outputs = conv2d(outputs, 64, [3, 3], [1, 1])
-
-        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 2) * int(self.HEIGHT / 2) * 64])
-        outputs = tf.reshape(outputs, [-1, self.WIDTH, self.HEIGHT, 16])
+        outputs = tf.reshape(outputs, [-1, int(self.WIDTH / 2) * int(self.HEIGHT / 2) * 32])
+        outputs = tf.reshape(outputs, [-1, self.WIDTH, self.HEIGHT, 8])
         outputs = conv2d(outputs, 32, [3, 3], [1, 1])
         outputs = conv2d(outputs, 2, [3, 3], [1, 1])
 
